@@ -1,161 +1,115 @@
 import pandas as pd
 import numpy as np
-from pykrx import stock
+import FinanceDataReader as fdr
 from datetime import datetime, timedelta
 import traceback
 
-# ──────────────────────────────────────────
-# 종목 목록
-# ──────────────────────────────────────────
-def get_recent_business_day() -> str:
-    """주말/공휴일이면 가장 최근 영업일 반환"""
-    d = datetime.now()
-    # 오늘이 주말이면 금요일로
-    while d.weekday() >= 5:
-        d -= timedelta(days=1)
-    return d.strftime("%Y%m%d")
+KOSPI_STOCKS = [
+    ("005930","삼성전자"),("000660","SK하이닉스"),("035420","NAVER"),
+    ("005380","현대차"),("051910","LG화학"),("006400","삼성SDI"),
+    ("035720","카카오"),("012330","현대모비스"),("028260","삼성물산"),
+    ("096770","SK이노베이션"),("034730","SK"),("055550","신한지주"),
+    ("105560","KB금융"),("000270","기아"),("068270","셀트리온"),
+    ("003670","POSCO홀딩스"),("032830","삼성생명"),("030200","KT"),
+    ("017670","SK텔레콤"),("066570","LG전자"),("010950","S-Oil"),
+    ("009150","삼성전기"),("018260","삼성에스디에스"),("011170","롯데케미칼"),
+    ("000810","삼성화재"),("086790","하나금융지주"),("316140","우리금융지주"),
+    ("024110","기업은행"),("139480","이마트"),("004020","현대제철"),
+]
+
+KOSDAQ_STOCKS = [
+    ("247540","에코프로비엠"),("086520","에코프로"),("196170","알테오젠"),
+    ("293490","카카오게임즈"),("357780","솔브레인"),("039030","이오테크닉스"),
+    ("064760","티씨케이"),("145020","휴젤"),("214150","클래시스"),
+    ("091990","셀트리온헬스케어"),("041510","에스엠"),("035900","JYP Ent"),
+    ("122870","와이지엔터테인먼트"),("112040","위메이드"),("263750","펄어비스"),
+    ("253450","스튜디오드래곤"),("067310","하나마이크론"),("078340","컴투스"),
+    ("036570","엔씨소프트"),("095660","네오위즈"),
+]
 
 def get_stock_list(market: str = "all") -> list[dict]:
-    today = get_recent_business_day()
-    print(f"종목 목록 조회 날짜: {today}")
     result = []
-    try:
-        if market in ("all", "kospi"):
-            tickers = stock.get_market_ticker_list(today, market="KOSPI")
-            print(f"KOSPI 종목 수: {len(tickers)}")
-            for t in tickers[:50]:  # 테스트용 50개 제한
-                name = stock.get_market_ticker_name(t)
-                result.append({"code": t, "name": name, "market": "KOSPI"})
-        if market in ("all", "kosdaq"):
-            tickers = stock.get_market_ticker_list(today, market="KOSDAQ")
-            print(f"KOSDAQ 종목 수: {len(tickers)}")
-            for t in tickers[:50]:  # 테스트용 50개 제한
-                name = stock.get_market_ticker_name(t)
-                result.append({"code": t, "name": name, "market": "KOSDAQ"})
-    except Exception as e:
-        print(f"종목 목록 오류: {e}")
-        traceback.print_exc()
+    if market in ("all", "kospi"):
+        for code, name in KOSPI_STOCKS:
+            result.append({"code": code, "name": name, "market": "KOSPI"})
+    if market in ("all", "kosdaq"):
+        for code, name in KOSDAQ_STOCKS:
+            result.append({"code": code, "name": name, "market": "KOSDAQ"})
     print(f"총 종목 수: {len(result)}")
     return result
 
-
-# ──────────────────────────────────────────
-# OHLCV 데이터 로드
-# ──────────────────────────────────────────
-def load_ohlcv(code: str, days: int = 300) -> pd.DataFrame | None:
+def load_ohlcv(code: str, days: int = 300):
     end = datetime.now()
     start = end - timedelta(days=days)
     try:
-        df = stock.get_market_ohlcv(
-            start.strftime("%Y%m%d"),
-            end.strftime("%Y%m%d"),
-            code
-        )
+        df = fdr.DataReader(code, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
         if df is None or len(df) < 60:
             return None
-        df.columns = ["open", "high", "low", "close", "volume", "change"]
+        df.columns = [c.lower() for c in df.columns]
+        if "close" not in df.columns:
+            return None
+        if "volume" not in df.columns:
+            df["volume"] = 0
         df.index = pd.to_datetime(df.index)
-        return df.dropna()
+        return df.dropna(subset=["close"])
     except Exception as e:
         print(f"OHLCV 오류 {code}: {e}")
         return None
 
-
-# ──────────────────────────────────────────
-# 기술적 지표 계산
-# ──────────────────────────────────────────
-def calc_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+def calc_rsi(series, period=14):
     delta = series.diff()
     gain = delta.clip(lower=0).rolling(period).mean()
     loss = (-delta.clip(upper=0)).rolling(period).mean()
     rs = gain / loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
-
-def calc_macd(series: pd.Series):
+def calc_macd(series):
     ema12 = series.ewm(span=12, adjust=False).mean()
     ema26 = series.ewm(span=26, adjust=False).mean()
     macd = ema12 - ema26
     signal = macd.ewm(span=9, adjust=False).mean()
-    hist = macd - signal
-    return macd, signal, hist
+    return macd, signal, macd - signal
 
-
-def calc_sma(series: pd.Series, period: int) -> pd.Series:
+def calc_sma(series, period):
     return series.rolling(period).mean()
 
-
-# ──────────────────────────────────────────
-# 삼각수렴 돌파 감지
-# ──────────────────────────────────────────
-def detect_triangle_breakout(df: pd.DataFrame, window: int = 60) -> bool:
-    """
-    최근 window일 내:
-    - 고점들이 하락 추세 (내림 저항선)
-    - 저점들이 상승 추세 (오름 지지선)
-    - 최근 종가가 저항선 위로 돌파
-    """
+def detect_triangle_breakout(df, window=60):
     if len(df) < window + 5:
         return False
-
     recent = df.iloc[-window:]
-    highs = recent["high"].values
-    lows = recent["low"].values
+    highs = recent["high"].values if "high" in df.columns else recent["close"].values
+    lows = recent["low"].values if "low" in df.columns else recent["close"].values
     x = np.arange(window)
-
-    # 선형 회귀로 추세선 기울기
     high_slope = np.polyfit(x, highs, 1)[0]
     low_slope = np.polyfit(x, lows, 1)[0]
-
-    # 고점은 내려오고 저점은 올라가야 수렴
     converging = high_slope < 0 and low_slope > 0
-
-    # 최근 5일 종가가 고점 추세선 위
-    last_close = df["close"].iloc[-1]
     projected_high = np.poly1d(np.polyfit(x, highs, 1))(window - 1)
-    breakout = last_close > projected_high
+    return converging and df["close"].iloc[-1] > projected_high
 
-    return converging and breakout
-
-
-# ──────────────────────────────────────────
-# 신호 감지
-# ──────────────────────────────────────────
-def detect_signals(df: pd.DataFrame, rsi_thresh: float, vol_mult: float) -> list[str]:
+def detect_signals(df, rsi_thresh, vol_mult):
     signals = []
     close = df["close"]
     volume = df["volume"]
-
     rsi = calc_rsi(close)
-    macd, macd_signal, _ = calc_macd(close)
+    macd, macd_sig, _ = calc_macd(close)
     sma20 = calc_sma(close, 20)
     sma60 = calc_sma(close, 60)
 
-    cur_rsi = rsi.iloc[-1]
-    prev_rsi = rsi.iloc[-2]
-    avg_vol = volume.iloc[-20:].mean()
-    cur_vol = volume.iloc[-1]
-
-    # ① RSI 과매도 반등
-    if pd.notna(prev_rsi) and pd.notna(cur_rsi):
-        if prev_rsi < rsi_thresh and cur_rsi > prev_rsi:
+    if pd.notna(rsi.iloc[-2]) and pd.notna(rsi.iloc[-1]):
+        if rsi.iloc[-2] < rsi_thresh and rsi.iloc[-1] > rsi.iloc[-2]:
             signals.append("rsi")
 
-    # ② MACD 골든크로스
-    if (pd.notna(macd.iloc[-1]) and pd.notna(macd_signal.iloc[-1]) and
-            pd.notna(macd.iloc[-2]) and pd.notna(macd_signal.iloc[-2])):
-        if macd.iloc[-2] < macd_signal.iloc[-2] and macd.iloc[-1] >= macd_signal.iloc[-1]:
+    if all(pd.notna(v) for v in [macd.iloc[-1], macd_sig.iloc[-1], macd.iloc[-2], macd_sig.iloc[-2]]):
+        if macd.iloc[-2] < macd_sig.iloc[-2] and macd.iloc[-1] >= macd_sig.iloc[-1]:
             signals.append("macd")
 
-    # ③ 거래량 급증
-    if avg_vol > 0 and cur_vol > avg_vol * vol_mult:
+    avg_vol = volume.iloc[-20:].mean()
+    if avg_vol > 0 and volume.iloc[-1] > avg_vol * vol_mult:
         signals.append("vol")
 
-    # ④ 삼각수렴 돌파
     if detect_triangle_breakout(df):
         signals.append("triangle")
 
-    # ⑤ 눌림목 (SMA60 위 + SMA20 근접)
     if pd.notna(sma20.iloc[-1]) and pd.notna(sma60.iloc[-1]):
         above60 = close.iloc[-1] > sma60.iloc[-1]
         near20 = abs(close.iloc[-1] - sma20.iloc[-1]) / sma20.iloc[-1] < 0.02
@@ -163,34 +117,27 @@ def detect_signals(df: pd.DataFrame, rsi_thresh: float, vol_mult: float) -> list
         if above60 and near20 and recent_high:
             signals.append("pullback")
 
-    # ⑥ 52주 신고가 돌파
-    high_52w = df["high"].iloc[-252:].max() if len(df) >= 252 else df["high"].max()
+    high_col = df["high"] if "high" in df.columns else close
+    high_52w = high_col.iloc[-252:].max() if len(df) >= 60 else high_col.max()
     if close.iloc[-1] >= high_52w * 0.995:
         signals.append("break")
 
     return signals
 
-
-# ──────────────────────────────────────────
-# 종목 분석 (스캔용)
-# ──────────────────────────────────────────
-def analyze_stock(stock_info: dict, rsi_thresh: float, vol_mult: float) -> dict | None:
+def analyze_stock(stock_info: dict, rsi_thresh: float, vol_mult: float):
     try:
         code = stock_info["code"]
         df = load_ohlcv(code)
         if df is None:
             return None
-
         signals = detect_signals(df, rsi_thresh, vol_mult)
         if not signals:
             return None
-
         close = df["close"]
         rsi_val = calc_rsi(close).iloc[-1]
         avg_vol = df["volume"].iloc[-20:].mean()
         vol_ratio = df["volume"].iloc[-1] / avg_vol if avg_vol > 0 else 0
         chg = (close.iloc[-1] - close.iloc[-2]) / close.iloc[-2] * 100
-
         return {
             "code": code,
             "name": stock_info["name"],
@@ -205,38 +152,29 @@ def analyze_stock(stock_info: dict, rsi_thresh: float, vol_mult: float) -> dict 
         traceback.print_exc()
         return None
 
-
-# ──────────────────────────────────────────
-# 차트 데이터 (상세)
-# ──────────────────────────────────────────
 def get_chart_data(code: str) -> dict:
     df = load_ohlcv(code, days=365)
     if df is None:
         return {"error": "데이터 없음"}
-
     close = df["close"]
-    macd, macd_signal, macd_hist = calc_macd(close)
+    macd, macd_sig, macd_hist = calc_macd(close)
     rsi = calc_rsi(close)
     sma20 = calc_sma(close, 20)
     sma60 = calc_sma(close, 60)
-
     def to_list(s):
         return [round(v, 2) if pd.notna(v) else None for v in s]
-
-    dates = [d.strftime("%Y-%m-%d") for d in df.index]
-
     return {
         "code": code,
-        "dates": dates,
-        "open":   [int(v) for v in df["open"]],
-        "high":   [int(v) for v in df["high"]],
-        "low":    [int(v) for v in df["low"]],
-        "close":  [int(v) for v in df["close"]],
-        "volume": [int(v) for v in df["volume"]],
-        "sma20":  to_list(sma20),
-        "sma60":  to_list(sma60),
-        "macd":   to_list(macd),
-        "macd_signal": to_list(macd_signal),
+        "dates": [d.strftime("%Y-%m-%d") for d in df.index],
+        "open":  [int(v) for v in df.get("open", close)],
+        "high":  [int(v) for v in df.get("high", close)],
+        "low":   [int(v) for v in df.get("low", close)],
+        "close": [int(v) for v in close],
+        "volume":[int(v) for v in df["volume"]],
+        "sma20": to_list(sma20),
+        "sma60": to_list(sma60),
+        "macd":  to_list(macd),
+        "macd_signal": to_list(macd_sig),
         "macd_hist":   to_list(macd_hist),
-        "rsi":    to_list(rsi),
+        "rsi":   to_list(rsi),
     }
