@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KR Stock Scanner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0a0c10;
+    --bg2: #111318;
+    --bg3: #181c24;
+    --border: #1e2330;
+    --accent: #00e5a0;
+    --accent2: #00b8ff;
+    --red: #ff4560;
+    --green: #00e5a0;
+    --text: #e0e6f0;
+    --muted: #5a6480;
+    --card: #13161e;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans KR', sans-serif;
+    min-height: 100vh;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg2);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-family: 'Space Mono', monospace; font-size: 17px; font-weight: 700; color: var(--accent); }
+  .logo span { color: var(--muted); }
+  .header-right { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    height: calc(100vh - 53px);
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .sb-section { padding: 18px; border-bottom: 1px solid var(--border); }
+  .sb-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; color: var(--muted);
+    letter-spacing: 2px; text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .market-row { display: flex; gap: 8px; }
+  .mkt-btn {
+    flex: 1; padding: 7px;
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--muted); border-radius: 6px; font-size: 12px;
+    cursor: pointer; transition: all 0.15s;
+    font-family: 'Noto Sans KR', sans-serif;
+  }
+  .mkt-btn.on { background: rgba(0,229,160,0.1); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+
+  .chk-list { display: flex; flex-direction: column; gap: 6px; }
+  .chk-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 6px;
+    border: 1px solid transparent; cursor: pointer;
+    font-size: 13px; transition: all 0.15s;
+  }
+  .chk-item:hover { background: var(--bg3); }
+  .chk-item.on { border-color: var(--accent); background: rgba(0,229,160,0.05); }
+  .chk-box {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 1.5px solid var(--muted); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .chk-item.on .chk-box { background: var(--accent); border-color: var(--accent); }
+  .chk-box::after {
+    content: '✓'; font-size: 10px; color: var(--bg);
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .chk-item.on .chk-box::after { opacity: 1; }
+  .chk-sub { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+  .slider-group { margin-bottom: 14px; }
+  .slider-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .slider-val { font-family: 'Space Mono', monospace; color: var(--accent); font-size: 12px; }
+  input[type=range] {
+    width: 100%; -webkit-appearance: none;
+    height: 2px; background: var(--border); outline: none; border-radius: 2px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    background: var(--accent); border-radius: 50%; cursor: pointer;
+  }
+
+  .scan-btn {
+    width: 100%; padding: 12px;
+    background: var(--accent); color: var(--bg);
+    border: none; border-radius: 8px;
+    font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700;
+    cursor: pointer; letter-spacing: 1px; transition: all 0.2s;
+  }
+  .scan-btn:hover { background: #00ffb3; transform: translateY(-1px); }
+  .scan-btn:disabled { background: var(--muted); cursor: not-allowed; transform: none; }
+
+  /* ── Main ── */
+  .main { display: grid; grid-template-rows: 300px 1fr; overflow: hidden; }
+
+  .results-panel { background: var(--bg2); border-bottom: 1px solid var(--border); overflow-y: auto; }
+  .rp-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg2); z-index: 5;
+  }
+  .rp-count { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); }
+  .rp-count span { color: var(--accent); }
+
+  .col-head {
+    display: grid;
+    grid-template-columns: 150px 90px 80px 70px 70px 1fr;
+    padding: 7px 18px;
+    font-size: 10px; color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 1px; text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stock-row {
+    display: grid;
+    grid-template-columns: 150px 90px 80px 70px 70px 1fr;
+    padding: 10px 18px; cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    align-items: center; transition: background 0.1s;
+  }
+  .stock-row:hover { background: var(--bg3); }
+  .stock-row.sel { background: rgba(0,229,160,0.07); border-left: 2px solid var(--accent); }
+  .sn { font-size: 13px; font-weight: 500; }
+  .sc { font-size: 10px; color: var(--muted); font-family: 'Space Mono', monospace; }
+  .num { font-family: 'Space Mono', monospace; font-size: 12px; }
+  .up { color: var(--red); }
+  .dn { color: var(--accent2); }
+
+  .badges { display: flex; gap: 4px; flex-wrap: wrap; }
+  .badge {
+    padding: 2px 6px; border-radius: 3px;
+    font-size: 9px; font-family: 'Space Mono', monospace; font-weight: 700;
+  }
+  .b-rsi      { background: rgba(0,184,255,0.15); color: var(--accent2); }
+  .b-macd     { background: rgba(0,229,160,0.15); color: var(--accent); }
+  .b-vol      { background: rgba(255,200,0,0.15); color: #ffc800; }
+  .b-triangle { background: rgba(255,69,96,0.15); color: var(--red); }
+  .b-pullback { background: rgba(180,100,255,0.15); color: #c87aff; }
+  .b-break    { background: rgba(255,150,0,0.15); color: #ff9600; }
+
+  /* ── Chart Panel ── */
+  .chart-panel { background: var(--bg); display: flex; flex-direction: column; overflow: hidden; }
+  .cp-header {
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg2);
+  }
+  .cp-name { font-size: 15px; font-weight: 700; }
+  .cp-code { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .cp-price { font-family: 'Space Mono', monospace; font-size: 20px; font-weight: 700; text-align: right; }
+  .cp-chg { font-family: 'Space Mono', monospace; font-size: 12px; text-align: right; }
+
+  .charts-grid {
+    flex: 1; display: grid;
+    grid-template-rows: 2fr 1fr 1fr;
+    gap: 1px; background: var(--border); overflow: hidden;
+  }
+  .cw { background: var(--bg); padding: 8px 14px 4px; }
+  .cw-label { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 3px; }
+
+  .empty {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100%; color: var(--muted); gap: 8px;
+  }
+  .empty-icon { font-size: 36px; opacity: 0.4; }
+
+  .status-bar {
+    padding: 8px 18px;
+    font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted);
+    background: var(--bg3); border-bottom: 1px solid var(--border);
+    min-height: 32px; display: flex; align-items: center; gap: 8px;
+  }
+  .dots span {
+    display: inline-block; width: 4px; height: 4px;
+    background: var(--accent); border-radius: 50%;
+    animation: blink 1s infinite; margin: 0 1px;
+  }
+  .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%,100%{opacity:.2} 50%{opacity:1} }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">KR<span>//</span>SCAN</div>
+  <div class="header-right" id="hdr-time">-</div>
+</header>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sb-section">
+      <div class="sb-title">시장</div>
+      <div class="market-row">
+        <button class="mkt-btn on" id="mkt-kospi" onclick="toggleMkt('kospi')">KOSPI</button>
+        <button class="mkt-btn on" id="mkt-kosdaq" onclick="toggleMkt('kosdaq')">KOSDAQ</button>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">신호 조건</div>
+      <div class="chk-list">
+        <div class="chk-item on" id="f-rsi" onclick="toggleF('rsi')">
+          <div class="chk-box"></div>
+          <div><div>RSI 과매도 반등</div><div class="chk-sub">RSI &lt; 기준치 후 반등</div></div>
+        </div>
+        <div class="chk-item on" id="f-macd" onclick="toggleF('macd')">
+          <div class="chk-box"></div>
+          <div><div>MACD 골든크로스</div><div class="chk-sub">시그널선 상향 돌파</div></div>
+        </div>
+        <div class="chk-item on" id="f-vol" onclick="toggleF('vol')">
+          <div class="chk-box"></div>
+          <div><div>거래량 급증</div><div class="chk-sub">평균 대비 N배 이상</div></div>
+        </div>
+        <div class="chk-item on" id="f-triangle" onclick="toggleF('triangle')">
+          <div class="chk-box"></div>
+          <div><div>삼각수렴 돌파</div><div class="chk-sub">고점↘ 저점↗ 수렴 후 상향</div></div>
+        </div>
+        <div class="chk-item on" id="f-pullback" onclick="toggleF('pullback')">
+          <div class="chk-box"></div>
+          <div><div>눌림목 매수</div><div class="chk-sub">SMA60 위 + SMA20 지지</div></div>
+        </div>
+        <div class="chk-item on" id="f-break" onclick="toggleF('break')">
+          <div class="chk-box"></div>
+          <div><div>52주 신고가 돌파</div><div class="chk-sub">연중 최고가 근접/돌파</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">파라미터</div>
+      <div class="slider-group">
+        <div class="slider-label">RSI 과매도 기준 <span class="slider-val" id="v-rsi">30</span></div>
+        <input type="range" min="20" max="45" value="30" id="s-rsi"
+          oninput="document.getElementById('v-rsi').textContent=this.value">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label">거래량 급증 배수 <span class="slider-val" id="v-vol">2.0x</span></div>
+        <input type="range" min="10" max="50" value="20" id="s-vol"
+          oninput="document.getElementById('v-vol').textContent=(this.value/10).toFixed(1)+'x'">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label">최소 신호 수 <span class="slider-val" id="v-sig">1개</span></div>
+        <input type="range" min="1" max="5" value="1" id="s-sig"
+          oninput="document.getElementById('v-sig').textContent=this.value+'개'">
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <button class="scan-btn" id="scan-btn" onclick="runScan()">▶ 스캔 시작</button>
+    </div>
+
+    <div class="sb-section" style="flex:1">
+      <div class="sb-title">신호 범례</div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:11px">
+        <div style="display:flex;align-items:center;gap:8px"><span class="badge b-rsi">RSI</span> RSI 과매도 반등</div>
+        <div style="display:flex;align-items:center;gap:8px"><span class="badge b-macd">MACD</span> MACD 골든크로스</div>
+        <div style="display:flex;align-items:center;gap:8px"><span class="badge b-vol">VOL</span> 거래량 급증</div>
+        <div style="display:flex;align-items:center;gap:8px"><span class="badge b-triangle">TRI</span> 삼각수렴 돌파</div>
+        <div style="display:flex;align-items:center;gap:8px"><span class="badge b-pullback">PULL</span> 눌림목</div>
+        <div style="display:flex;align-items:center;gap:8px"><span class="badge b-break">BREAK</span> 52주 신고가</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="results-panel">
+      <div class="rp-header">
+        <div class="sb-title" style="margin:0">검색 결과</div>
+        <div class="rp-count">총 <span id="r-count">0</span>종목</div>
+      </div>
+      <div class="status-bar" id="status">스캔 버튼을 눌러 종목을 검색하세요.</div>
+      <div class="col-head">
+        <div>종목명</div><div>현재가</div><div>등락률</div>
+        <div>RSI</div><div>거래량비</div><div>신호</div>
+      </div>
+      <div id="rows"></div>
+    </div>
+
+    <div class="chart-panel">
+      <div id="cp-header" class="cp-header" style="display:none">
+        <div>
+          <div class="cp-name" id="cp-name">-</div>
+          <div class="cp-code" id="cp-code">-</div>
+        </div>
+        <div>
+          <div class="cp-price" id="cp-price">-</div>
+          <div class="cp-chg" id="cp-chg">-</div>
+        </div>
+      </div>
+      <div id="cp-empty" class="empty">
+        <div class="empty-icon">📈</div>
+        <div style="font-size:13px">종목을 선택하면 차트가 표시됩니다</div>
+        <div style="font-size:11px;color:var(--muted)">먼저 스캔을 실행해주세요</div>
+      </div>
+      <div class="charts-grid" id="charts-grid" style="display:none">
+        <div class="cw"><div class="cw-label">가격 · SMA20 · SMA60</div><canvas id="c-price"></canvas></div>
+        <div class="cw"><div class="cw-label">MACD</div><canvas id="c-macd"></canvas></div>
+        <div class="cw"><div class="cw-label">RSI</div><canvas id="c-rsi"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';   // 같은 서버에서 서빙하므로 relative path
+
+let mkts = { kospi: true, kosdaq: true };
+let filters = { rsi:true, macd:true, vol:true, triangle:true, pullback:true, break:true };
+let results = [];
+let charts = {};
+
+function toggleMkt(m) {
+  mkts[m] = !mkts[m];
+  document.getElementById('mkt-' + m).classList.toggle('on', mkts[m]);
+}
+function toggleF(f) {
+  filters[f] = !filters[f];
+  document.getElementById('f-' + f).classList.toggle('on', filters[f]);
+  renderRows(results); // 클라이언트 측 재필터
+}
+
+async function runScan() {
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true; btn.textContent = '스캔 중...';
+  setStatus('<div class="dots"><span></span><span></span><span></span></div> 전 종목 분석 중... (수십 초 소요)');
+
+  const rsi = document.getElementById('s-rsi').value;
+  const vol = (document.getElementById('s-vol').value / 10).toFixed(1);
+  const sig = document.getElementById('s-sig').value;
+
+  let market = 'all';
+  if (mkts.kospi && !mkts.kosdaq) market = 'kospi';
+  if (!mkts.kospi && mkts.kosdaq) market = 'kosdaq';
+
+  try {
+    const res = await fetch(`${API}/api/scan?market=${market}&rsi_thresh=${rsi}&vol_mult=${vol}&min_signals=${sig}`);
+    const data = await res.json();
+    results = data.results;
+    renderRows(results);
+    document.getElementById('r-count').textContent = data.total;
+    document.getElementById('hdr-time').textContent = '업데이트: ' + new Date().toLocaleTimeString('ko-KR');
+    setStatus(`✅ 완료 — ${data.total}개 종목 발견`);
+  } catch(e) {
+    setStatus('❌ 서버 연결 실패: ' + e.message);
+  }
+
+  btn.disabled = false; btn.textContent = '▶ 스캔 시작';
+}
+
+function setStatus(html) {
+  document.getElementById('status').innerHTML = html;
+}
+
+const BADGE = {
+  rsi: ['b-rsi','RSI'], macd: ['b-macd','MACD'], vol: ['b-vol','VOL'],
+  triangle: ['b-triangle','TRI'], pullback: ['b-pullback','PULL'], break: ['b-break','BREAK']
+};
+
+function renderRows(data) {
+  const active = Object.keys(filters).filter(f => filters[f]);
+  const filtered = data.filter(s => s.signals.some(sig => active.includes(sig)));
+  document.getElementById('r-count').textContent = filtered.length;
+
+  document.getElementById('rows').innerHTML = filtered.map((s, i) => `
+    <div class="stock-row" id="row-${i}" onclick="selectStock(${i}, this)">
+      <div><div class="sn">${s.name}</div><div class="sc">${s.code} · ${s.market}</div></div>
+      <div class="num">${s.close.toLocaleString()}원</div>
+      <div class="num ${s.change >= 0 ? 'up' : 'dn'}">${s.change >= 0 ? '+' : ''}${s.change}%</div>
+      <div class="num" style="color:${s.rsi < 30 ? 'var(--accent2)' : s.rsi > 70 ? 'var(--red)' : 'var(--text)'}">${s.rsi ?? '-'}</div>
+      <div class="num" style="color:${s.vol_ratio > 2 ? '#ffc800' : 'var(--muted)'}">${s.vol_ratio}x</div>
+      <div class="badges">${s.signals.filter(sg => filters[sg]).map(sg => `<span class="badge ${BADGE[sg][0]}">${BADGE[sg][1]}</span>`).join('')}</div>
+    </div>
+  `).join('');
+
+  // 필터된 결과를 글로벌로 저장 (인덱스 맞추기)
+  window._filteredResults = filtered;
+}
+
+async function selectStock(i, el) {
+  document.querySelectorAll('.stock-row').forEach(r => r.classList.remove('sel'));
+  el.classList.add('sel');
+
+  const s = window._filteredResults[i];
+  document.getElementById('cp-name').textContent = s.name;
+  document.getElementById('cp-code').textContent = `${s.code} · ${s.market}`;
+  document.getElementById('cp-price').textContent = s.close.toLocaleString() + '원';
+  const chgEl = document.getElementById('cp-chg');
+  chgEl.textContent = (s.change >= 0 ? '+' : '') + s.change + '%';
+  chgEl.style.color = s.change >= 0 ? 'var(--red)' : 'var(--accent2)';
+
+  document.getElementById('cp-header').style.display = 'flex';
+  document.getElementById('cp-empty').style.display = 'none';
+  document.getElementById('charts-grid').style.display = 'grid';
+
+  // 차트 데이터 로드
+  try {
+    const res = await fetch(`${API}/api/chart/${s.code}`);
+    const d = await res.json();
+    drawCharts(d);
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+const chartOpts = {
+  responsive: true, maintainAspectRatio: false,
+  animation: { duration: 250 },
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: '#5a6480', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: '#1e2330' } },
+    y: { ticks: { color: '#5a6480', font: { size: 9 } }, grid: { color: '#1e2330' } }
+  }
+};
+
+function drawCharts(d) {
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+
+  const labels = d.dates.map(dt => dt.slice(5)); // MM-DD
+
+  charts.price = new Chart(document.getElementById('c-price'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: '종가', data: d.close, borderColor: '#fff', borderWidth: 1.5, pointRadius: 0, tension: 0.1 },
+        { label: 'SMA20', data: d.sma20, borderColor: '#00e5a0', borderWidth: 1, pointRadius: 0, tension: 0.1 },
+        { label: 'SMA60', data: d.sma60, borderColor: '#00b8ff', borderWidth: 1, pointRadius: 0, tension: 0.1 },
+      ]
+    },
+    options: { ...chartOpts, plugins: { legend: { display: true, labels: { color: '#5a6480', font: { size: 9 }, boxWidth: 20 } } } }
+  });
+
+  charts.macd = new Chart(document.getElementById('c-macd'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'MACD', data: d.macd, borderColor: '#00e5a0', borderWidth: 1.5, pointRadius: 0, tension: 0.1 },
+        { label: 'Signal', data: d.macd_signal, borderColor: '#ff4560', borderWidth: 1, pointRadius: 0, tension: 0.1 },
+      ]
+    },
+    options: { ...chartOpts, plugins: { legend: { display: true, labels: { color: '#5a6480', font: { size: 9 }, boxWidth: 20 } } } }
+  });
+
+  charts.rsi = new Chart(document.getElementById('c-rsi'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{ label: 'RSI', data: d.rsi, borderColor: '#00b8ff', borderWidth: 1.5, pointRadius: 0, tension: 0.1 }]
+    },
+    options: {
+      ...chartOpts,
+      scales: {
+        ...chartOpts.scales,
+        y: { ...chartOpts.scales.y, min: 0, max: 100 }
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>
