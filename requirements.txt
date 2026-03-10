@@ -1,5 +1,5 @@
 fastapi==0.111.0
 uvicorn==0.29.0
-FinanceDataReader==0.9.50
+FinanceDataReader
 pandas==2.2.2
 numpy==1.26.4
