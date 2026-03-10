@@ -7,22 +7,35 @@ import traceback
 # ──────────────────────────────────────────
 # 종목 목록
 # ──────────────────────────────────────────
+def get_recent_business_day() -> str:
+    """주말/공휴일이면 가장 최근 영업일 반환"""
+    d = datetime.now()
+    # 오늘이 주말이면 금요일로
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d.strftime("%Y%m%d")
+
 def get_stock_list(market: str = "all") -> list[dict]:
-    today = datetime.now().strftime("%Y%m%d")
+    today = get_recent_business_day()
+    print(f"종목 목록 조회 날짜: {today}")
     result = []
     try:
         if market in ("all", "kospi"):
             tickers = stock.get_market_ticker_list(today, market="KOSPI")
-            for t in tickers:
+            print(f"KOSPI 종목 수: {len(tickers)}")
+            for t in tickers[:50]:  # 테스트용 50개 제한
                 name = stock.get_market_ticker_name(t)
                 result.append({"code": t, "name": name, "market": "KOSPI"})
         if market in ("all", "kosdaq"):
             tickers = stock.get_market_ticker_list(today, market="KOSDAQ")
-            for t in tickers:
+            print(f"KOSDAQ 종목 수: {len(tickers)}")
+            for t in tickers[:50]:  # 테스트용 50개 제한
                 name = stock.get_market_ticker_name(t)
                 result.append({"code": t, "name": name, "market": "KOSDAQ"})
     except Exception as e:
         print(f"종목 목록 오류: {e}")
+        traceback.print_exc()
+    print(f"총 종목 수: {len(result)}")
     return result
 
 
